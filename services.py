@@ -1,11 +1,15 @@
 import json
 import logging
+import re
 from pypdf import PdfReader
-from google import genai
-from config import GEMINI_API_KEY
+from groq import Groq
+from config import GROQ_API_KEY
 
-# Inicializar el nuevo cliente oficial
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Inicializar cliente Groq
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+PRIMARY_MODEL = "llama-3.3-70b-versatile"
+FALLBACK_MODEL = "llama-3.1-8b-instant"
 
 def extract_text_from_pdf(pdf_path, max_pages=50):
     reader = PdfReader(pdf_path)
@@ -16,58 +20,86 @@ def extract_text_from_pdf(pdf_path, max_pages=50):
             extracted_text += text + "\n"
     return extracted_text
 
-def generate_quiz_from_text(text):
-    prompt = f"""
-    Actúa como un profesor universitario. Con base en el siguiente texto, genera un cuestionario de exactamente 3 preguntas de opción múltiple.
-    Responde ÚNICAMENTE con un arreglo JSON válido (sin etiquetas markdown) con esta estructura exacta:
-    [
-      {{
-        "question": "Texto de la pregunta (máximo 250 caracteres)",
-        "options": ["Opción 1", "Opción 2", "Opción 3", "Opción 4"],
-        "correct_option_id": 0,
-        "explanation": "Explicación breve (máximo 200 caracteres)"
-      }}
-    ]
-    Texto de estudio:
-    {text[:100000]}
-    """
+def _call_groq_completion(messages, temperature=0.3):
+    global client
+    if not client:
+        client = Groq(api_key=GROQ_API_KEY)
+        
+    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
+    last_error = None
     
-    # Nueva sintaxis de la librería oficial
-    response = client.models.generate_content(
-        model='gemini-flash-latest',
-        contents=prompt
+    for model in models_to_try:
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            logging.warning(f"Fallo al consultar modelo {model} en Groq: {e}. Intentando alternativa...")
+            last_error = e
+            
+    raise last_error
+
+def generate_quiz_from_text(text):
+    system_prompt = (
+        "Actúa como un profesor universitario. Con base en el texto provisto, "
+        "genera un cuestionario de exactamente 3 preguntas de opción múltiple. "
+        "Responde ÚNICAMENTE con un arreglo JSON válido (sin explicaciones adicionales, sin markdown extra) "
+        "con esta estructura exacta:\n"
+        "[\n"
+        "  {\n"
+        '    "question": "Texto de la pregunta (máximo 250 caracteres)",\n'
+        '    "options": ["Opción 1", "Opción 2", "Opción 3", "Opción 4"],\n'
+        '    "correct_option_id": 0,\n'
+        '    "explanation": "Explicación breve (máximo 200 caracteres)"\n'
+        "  }\n"
+        "]"
     )
     
-    raw_text = response.text.replace("```json", "").replace("```", "").strip()
-    return json.loads(raw_text)
+    user_prompt = f"Texto de estudio:\n{text[:80000]}"
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    
+    response_text = _call_groq_completion(messages, temperature=0.2)
+    
+    # Limpiar posibles bloques de código markdown ```json ... ```
+    cleaned = re.sub(r"^```json\s*", "", response_text.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+    
+    # Extraer el bloque JSON de corchetes si hubiera texto adicional
+    json_match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+    if json_match:
+        cleaned = json_match.group(0)
+        
+    return json.loads(cleaned)
 
 def answer_question_from_context(question, context=None):
     if context:
-        prompt = f"""
-        Actúa como un tutor académico paciente y experto. El estudiante está estudiando un documento con el siguiente texto de contexto:
-        ---
-        {context[:100000]}
-        ---
-        Responde a la siguiente pregunta del estudiante basándote en el contexto anterior.
-        Si la pregunta no se relaciona con el contexto o no se menciona, responde de forma general aclarando brevemente que no estaba en el texto original, pero proporciona una respuesta completa y educativa.
-        
-        INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro en tu respuesta. Responde únicamente lo necesario para resolver la duda del estudiante de forma educativa y concisa, sin explayarte de más innecesariamente. Usa formato markdown limpio.
-
-        Pregunta del estudiante: {question}
-        Respuesta del tutor:
-        """
+        system_prompt = (
+            "Actúa como un tutor académico paciente y experto. "
+            "El estudiante está estudiando un documento con el siguiente texto de contexto:\n"
+            f"---\n{context[:80000]}\n---\n"
+            "Responde a la pregunta del estudiante basándote en el contexto anterior. "
+            "Si la pregunta no se relaciona con el contexto, responde de forma general aclarando brevemente "
+            "que no estaba en el texto original, pero proporciona una respuesta completa y educativa.\n"
+            "INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro. Usa formato markdown limpio."
+        )
     else:
-        prompt = f"""
-        Actúa como un tutor académico paciente y experto. Responde a la siguiente pregunta del estudiante de forma educativa, estructurada y muy clara.
+        system_prompt = (
+            "Actúa como un tutor académico paciente y experto. "
+            "Responde a la pregunta del estudiante de forma educativa, estructurada y muy clara.\n"
+            "INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro. Usa formato markdown limpio."
+        )
         
-        INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro en tu respuesta. Responde únicamente lo necesario para resolver la duda del estudiante de forma educativa y concisa, sin explayarte de más innecesariamente. Usa formato markdown limpio.
-
-        Pregunta del estudiante: {question}
-        Respuesta del tutor:
-        """
-        
-    response = client.models.generate_content(
-        model='gemini-flash-latest',
-        contents=prompt
-    )
-    return response.text
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Pregunta del estudiante: {question}"}
+    ]
+    
+    return _call_groq_completion(messages, temperature=0.4)

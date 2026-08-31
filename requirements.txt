@@ -1,5 +1,5 @@
 python-telegram-bot
-google-genai
+groq
 pypdf
 python-dotenv
 SQLAlchemy

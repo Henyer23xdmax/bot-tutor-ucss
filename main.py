@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, PollAnswerHandler, CallbackQueryHandler, filters
-from config import TELEGRAM_TOKEN, GEMINI_API_KEY
+from config import TELEGRAM_TOKEN, GROQ_API_KEY
 from handlers import start, stats, sysinfo, exportar, ping, duda, handle_document, handle_poll_answer, handle_callback
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -38,8 +38,8 @@ async def post_init(application) -> None:
     await application.bot.set_my_commands(commands)
 
 if __name__ == '__main__':
-    if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
-        print("❌ ERROR: Faltan las variables TELEGRAM_TOKEN o GEMINI_API_KEY en el archivo .env")
+    if not TELEGRAM_TOKEN or not GROQ_API_KEY:
+        print("❌ ERROR: Faltan las variables TELEGRAM_TOKEN o GROQ_API_KEY en el archivo .env")
         exit(1)
         
     # Iniciar servidor de Health Check en segundo plano para Render
