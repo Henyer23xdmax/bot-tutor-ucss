@@ -7,7 +7,7 @@ from config import GEMINI_API_KEY
 # Inicializar el nuevo cliente oficial
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-def extract_text_from_pdf(pdf_path, max_pages=10):
+def extract_text_from_pdf(pdf_path, max_pages=50):
     reader = PdfReader(pdf_path)
     extracted_text = ""
     for page in reader.pages[:max_pages]:
@@ -29,7 +29,7 @@ def generate_quiz_from_text(text):
       }}
     ]
     Texto de estudio:
-    {text[:4000]}
+    {text[:100000]}
     """
     
     # Nueva sintaxis de la librería oficial
@@ -46,18 +46,21 @@ def answer_question_from_context(question, context=None):
         prompt = f"""
         Actúa como un tutor académico paciente y experto. El estudiante está estudiando un documento con el siguiente texto de contexto:
         ---
-        {context[:6000]}
+        {context[:100000]}
         ---
         Responde a la siguiente pregunta del estudiante basándote en el contexto anterior.
         Si la pregunta no se relaciona con el contexto o no se menciona, responde de forma general aclarando brevemente que no estaba en el texto original, pero proporciona una respuesta completa y educativa.
-        Usa formato markdown limpio para tu respuesta.
+        
+        INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro en tu respuesta. Responde únicamente lo necesario para resolver la duda del estudiante de forma educativa y concisa, sin explayarte de más innecesariamente. Usa formato markdown limpio.
 
         Pregunta del estudiante: {question}
         Respuesta del tutor:
         """
     else:
         prompt = f"""
-        Actúa como un tutor académico paciente y experto. Responde a la siguiente pregunta del estudiante de forma educativa, estructurada y muy clara usando formato markdown.
+        Actúa como un tutor académico paciente y experto. Responde a la siguiente pregunta del estudiante de forma educativa, estructurada y muy clara.
+        
+        INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro en tu respuesta. Responde únicamente lo necesario para resolver la duda del estudiante de forma educativa y concisa, sin explayarte de más innecesariamente. Usa formato markdown limpio.
 
         Pregunta del estudiante: {question}
         Respuesta del tutor:
