@@ -185,6 +185,21 @@ async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as parse_err:
             logging.warning(f"Error parseando Markdown, enviando como texto plano: {parse_err}")
             await status_msg.edit_text(respuesta)
+            
+        # Si había un documento activo, ofrecer nuevamente el menú de opciones
+        if contexto:
+            keyboard = [
+                [
+                    InlineKeyboardButton("🎯 Generar Cuestionario", callback_data="btn_quiz"),
+                    InlineKeyboardButton("💬 Resolver otra Duda", callback_data="btn_duda"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="🔄 ¿Qué deseas hacer a continuación con este documento?",
+                reply_markup=reply_markup
+            )
     except Exception as e:
         logging.error(f"Error en el comando /duda: {e}")
         await status_msg.edit_text("⚠️ Ocurrió un error al procesar tu duda. Por favor, intenta de nuevo.")
