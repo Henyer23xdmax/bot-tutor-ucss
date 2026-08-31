@@ -27,6 +27,13 @@ def extract_text_from_pdf(pdf_path, max_pages=50):
             extracted_text += text + "\n"
     return extracted_text
 
+def _clean_reasoning_tags(text: str) -> str:
+    if not text:
+        return ""
+    # Remover bloques <think>...</think>
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    return text.strip()
+
 def _call_groq_completion(messages, temperature=0.3, max_tokens=None):
     global client
     from config import GROQ_API_KEY
@@ -49,12 +56,20 @@ def _call_groq_completion(messages, temperature=0.3, max_tokens=None):
                 kwargs["max_tokens"] = max_tokens
                 
             completion = client.chat.completions.create(**kwargs)
-            return completion.choices[0].message.content
+            raw_content = completion.choices[0].message.content or ""
+            content = _clean_reasoning_tags(raw_content)
+            
+            if content.strip():
+                return content
+            else:
+                logging.warning(f"Modelo {model} devolvió contenido vacío. Intentando alternativa...")
         except Exception as e:
             logging.warning(f"Fallo al consultar modelo {model} en Groq: {e}. Intentando alternativa...")
             last_error = e
             
-    raise last_error
+    if last_error:
+        raise last_error
+    raise ValueError("Ningún modelo de IA devolvió una respuesta válida.")
 
 def generate_quiz_from_text(text):
     system_prompt = (

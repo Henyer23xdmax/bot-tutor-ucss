@@ -160,8 +160,12 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def split_message(text: str, max_length: int = 4000) -> list[str]:
     """Divide un texto largo en bloques de tamaño máximo respetando saltos de línea."""
-    if not text or len(text) <= max_length:
-        return [text] if text else [""]
+    if not text or not str(text).strip():
+        return ["⚠️ No se obtuvo una respuesta de la IA. Por favor, intenta de nuevo."]
+    
+    text = str(text).strip()
+    if len(text) <= max_length:
+        return [text]
     
     chunks = []
     remaining = text
@@ -175,9 +179,11 @@ def split_message(text: str, max_length: int = 4000) -> list[str]:
         if split_idx == -1 or split_idx < 100:
             split_idx = max_length
         
-        chunks.append(remaining[:split_idx].strip())
+        chunk = remaining[:split_idx].strip()
+        if chunk:
+            chunks.append(chunk)
         remaining = remaining[split_idx:].strip()
-    return chunks
+    return chunks if chunks else ["⚠️ No se obtuvo una respuesta válida."]
 
 # FUNCIÓN: Responder dudas exclusivas sobre el PDF
 async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -217,7 +223,7 @@ async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta = answer_question_from_pdf(pregunta, contexto)
         chunks = split_message(respuesta, max_length=4000)
         
-        first_chunk = chunks[0] if chunks else "No se obtuvo respuesta."
+        first_chunk = chunks[0]
         try:
             await status_msg.edit_text(first_chunk, parse_mode="Markdown")
         except Exception as parse_err:
@@ -268,7 +274,7 @@ async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta = ask_general_ai(pregunta)
         chunks = split_message(respuesta, max_length=4000)
         
-        first_chunk = chunks[0] if chunks else "No se obtuvo respuesta."
+        first_chunk = chunks[0]
         try:
             await status_msg.edit_text(first_chunk, parse_mode="Markdown")
         except Exception as parse_err:
