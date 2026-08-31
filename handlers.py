@@ -6,7 +6,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 from database import SessionLocal, User, ActivePoll
-from services import extract_text_from_pdf, generate_quiz_from_text
+from services import extract_text_from_pdf, generate_quiz_from_text, answer_question_from_context
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -27,7 +27,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📊 /stats - Ver tus estadísticas académicas\n"
         "🖥️ /sysinfo - Ver estado del servidor (CPU/RAM)\n"
         "📁 /exportar - Exportar base de datos a CSV\n"
-        "⚡ /ping - Medir la latencia del bot con el servidor\n\n"
+        "⚡ /ping - Medir la latencia del bot con el servidor\n"
+        "💬 /duda [pregunta] - Resuelve tus dudas académicas sobre el PDF enviado o en general\n\n"
         "📚 *¿Cómo empezar?*\n"
         "Envíame un archivo **PDF** (máximo 5MB) de estudio y yo generaré un cuestionario de 3 preguntas de opción múltiple para evaluar tu conocimiento.",
         parse_mode="Markdown"
@@ -114,6 +115,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text("🎯 ¡Quiz generado! Responde para sumar puntos:")
         
         db = SessionLocal()
+        
+        # Guardar el texto extraído como el último contexto de estudio del usuario
+        user = db.query(User).filter_by(telegram_id=update.effective_user.id).first()
+        if user:
+            user.last_context = text
+            
         for q in quizzes:
             message = await context.bot.send_poll(
                 chat_id=update.effective_chat.id,
@@ -153,3 +160,32 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user_record.wrong_answers += 1
         db.commit()
     db.close()
+
+# NUEVA FUNCIÓN: Responder dudas académicas
+async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # Verificar si el usuario ingresó una pregunta
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ *Uso incorrecto del comando*\n\n"
+            "Por favor escribe tu duda académica después de `/duda`.\n"
+            "Ejemplo: `/duda ¿qué es la fotosíntesis?`", 
+            parse_mode="Markdown"
+        )
+        return
+        
+    pregunta = " ".join(context.args)
+    status_msg = await update.message.reply_text("🤔 Analizando tu duda y consultando al tutor...")
+    
+    db = SessionLocal()
+    user = db.query(User).filter_by(telegram_id=user_id).first()
+    contexto = user.last_context if user else None
+    db.close()
+    
+    try:
+        respuesta = answer_question_from_context(pregunta, contexto)
+        await status_msg.edit_text(respuesta, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Error en el comando /duda: {e}")
+        await status_msg.edit_text("⚠️ Ocurrió un error al procesar tu duda. Por favor, intenta de nuevo.")

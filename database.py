@@ -10,6 +10,7 @@ class User(Base):
     first_name = Column(String)
     correct_answers = Column(Integer, default=0)
     wrong_answers = Column(Integer, default=0)
+    last_context = Column(String, nullable=True)
 
 class ActivePoll(Base):
     __tablename__ = 'active_polls'

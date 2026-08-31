@@ -5,7 +5,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, PollAnswerHandler, filters
 from config import TELEGRAM_TOKEN, GEMINI_API_KEY
-from handlers import start, stats, sysinfo, exportar, ping, handle_document, handle_poll_answer
+from handlers import start, stats, sysinfo, exportar, ping, duda, handle_document, handle_poll_answer
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -33,6 +33,7 @@ async def post_init(application) -> None:
         BotCommand("sysinfo", "Ver estado del servidor (CPU/RAM)"),
         BotCommand("exportar", "Exportar lista de estudiantes a CSV"),
         BotCommand("ping", "Medir la latencia del bot con el servidor"),
+        BotCommand("duda", "Resolver dudas académicas con el tutor"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -54,6 +55,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("sysinfo", sysinfo))
     app.add_handler(CommandHandler("exportar", exportar))
     app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(CommandHandler("duda", duda))
     
     # Procesamiento de archivos y encuestas
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
