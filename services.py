@@ -34,7 +34,7 @@ def generate_quiz_from_text(text):
     
     # Nueva sintaxis de la librería oficial
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-3.6-flash',
         contents=prompt
     )
     
@@ -64,7 +64,7 @@ def answer_question_from_context(question, context=None):
         """
         
     response = client.models.generate_content(
-        model='gemini-2.5-flash',
+        model='gemini-3.6-flash',
         contents=prompt
     )
     return response.text
