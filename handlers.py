@@ -158,6 +158,27 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db.commit()
     db.close()
 
+import re
+
+def format_for_telegram(text: str) -> str:
+    """Convierte el formato Markdown estándar de la IA al formato compatible con Telegram."""
+    if not text:
+        return ""
+    
+    # 1. Convertir encabezados Markdown (### Titulo, ## Titulo, # Titulo) a negritas (*Titulo*)
+    text = re.sub(r"^(#{1,6})\s*(.+)$", r"*\2*", text, flags=re.MULTILINE)
+    
+    # 2. Convertir triple asterisco (***texto***) a asterisco simple (*texto*)
+    text = re.sub(r"\*{3,}(.+?)\*{3,}", r"*\1*", text)
+    
+    # 3. Convertir doble asterisco (**texto**) a asterisco simple (*texto*) para Telegram Markdown
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    
+    # 4. Convertir doble guion bajo (__texto__) a asterisco simple (*texto*)
+    text = re.sub(r"__(.+?)__", r"*\1*", text)
+    
+    return text
+
 def split_message(text: str, max_length: int = 4000) -> list[str]:
     """Divide un texto largo en bloques de tamaño máximo respetando saltos de línea."""
     if not text or not str(text).strip():
@@ -184,6 +205,27 @@ def split_message(text: str, max_length: int = 4000) -> list[str]:
             chunks.append(chunk)
         remaining = remaining[split_idx:].strip()
     return chunks if chunks else ["⚠️ No se obtuvo una respuesta válida."]
+
+async def send_formatted_message(status_msg, update, text: str):
+    """Envía o edita mensajes asegurando formato Markdown compatible con Telegram."""
+    chunks = split_message(text, max_length=4000)
+    
+    # Primer bloque edita el mensaje de carga
+    first_chunk = chunks[0]
+    formatted_first = format_for_telegram(first_chunk)
+    try:
+        await status_msg.edit_text(formatted_first, parse_mode="Markdown")
+    except Exception as parse_err:
+        logging.warning(f"Error parseando Markdown en primer bloque: {parse_err}")
+        await status_msg.edit_text(first_chunk)
+        
+    # Bloques siguientes se envían como mensajes nuevos
+    for chunk in chunks[1:]:
+        formatted_chunk = format_for_telegram(chunk)
+        try:
+            await update.message.reply_text(formatted_chunk, parse_mode="Markdown")
+        except Exception:
+            await update.message.reply_text(chunk)
 
 # FUNCIÓN: Responder dudas exclusivas sobre el PDF
 async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,20 +263,7 @@ async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         respuesta = answer_question_from_pdf(pregunta, contexto)
-        chunks = split_message(respuesta, max_length=4000)
-        
-        first_chunk = chunks[0]
-        try:
-            await status_msg.edit_text(first_chunk, parse_mode="Markdown")
-        except Exception as parse_err:
-            logging.warning(f"Error parseando Markdown, enviando como texto plano: {parse_err}")
-            await status_msg.edit_text(first_chunk)
-            
-        for chunk in chunks[1:]:
-            try:
-                await update.message.reply_text(chunk, parse_mode="Markdown")
-            except Exception:
-                await update.message.reply_text(chunk)
+        await send_formatted_message(status_msg, update, respuesta)
             
         # Ofrecer nuevamente el menú de opciones del documento
         keyboard = [
@@ -272,20 +301,7 @@ async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         respuesta = ask_general_ai(pregunta)
-        chunks = split_message(respuesta, max_length=4000)
-        
-        first_chunk = chunks[0]
-        try:
-            await status_msg.edit_text(first_chunk, parse_mode="Markdown")
-        except Exception as parse_err:
-            logging.warning(f"Error parseando Markdown, enviando como texto plano: {parse_err}")
-            await status_msg.edit_text(first_chunk)
-            
-        for chunk in chunks[1:]:
-            try:
-                await update.message.reply_text(chunk, parse_mode="Markdown")
-            except Exception:
-                await update.message.reply_text(chunk)
+        await send_formatted_message(status_msg, update, respuesta)
     except Exception as e:
         logging.error(f"Error en el comando /ia: {e}")
         await status_msg.edit_text("⚠️ Ocurrió un error al consultar a la IA. Por favor, intenta de nuevo.")
