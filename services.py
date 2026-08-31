@@ -118,29 +118,29 @@ def answer_question_from_pdf(question: str, context: str):
         "1. Responde basándote ÚNICA Y EXCLUSIVAMENTE en la información explícita del documento anterior.\n"
         "2. Si la respuesta no se encuentra en el documento, indícalo de forma clara y directa:\n"
         "   '⚠️ Esta información no se encuentra en el PDF que subiste. Si deseas consultar sobre temas generales fuera del documento, usa el comando /ia.'\n"
-        "3. LÍMITE DE LONGITUD: Máximo 1800 a 2000 caracteres (unas 250 a 320 palabras). Sé conciso, directo, didáctico y usa formato markdown limpio."
+        "3. Sé conciso, directo, didáctico y usa formato markdown limpio. Concluye siempre tus oraciones y secciones de forma completa."
     )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Pregunta sobre el PDF: {question}"}
     ]
-    return _call_groq_completion(messages, temperature=0.2, max_tokens=650)
+    return _call_groq_completion(messages, temperature=0.2, max_tokens=1500)
 
 def ask_general_ai(question: str):
     """Responde cualquier duda general o académica sin requerir un PDF previo."""
     system_prompt = (
         "Actúa como un asistente académico y tutor inteligente experto, didáctico y servicial. "
-        "Responde a la duda o tema académico del estudiante de forma clara, estructurada y pedagógica.\n"
-        "INSTRUCCIONES Y LÍMITES OBLIGATORIOS:\n"
-        "1. LÍMITE DE LONGITUD: Tu respuesta debe tener entre 1500 y 2000 caracteres como máximo (unas 250 a 320 palabras).\n"
-        "2. ESTRUCTURA: Ve directo al grano. Inicia con una explicación clara y concisa, seguida de puntos clave con viñetas y un ejemplo práctico si aplica.\n"
-        "3. FORMATO: Usa formato Markdown limpio para Telegram (negritas, listas ordenadas y código si es necesario)."
+        "Responde a la duda o tema formulado por el estudiante de forma clara, estructurada y pedagógica.\n"
+        "INSTRUCCIONES CLAVE:\n"
+        "1. ESTRUCTURA: Ve directo al grano con explicaciones claras, puntos clave en viñetas o tablas si enriquecen la respuesta.\n"
+        "2. CIERRE COMPLETO: Asegúrate de finalizar y cerrar siempre tus oraciones, listas o tablas de forma completa y natural. Nunca dejes una idea a medias.\n"
+        "3. FORMATO: Usa formato Markdown limpio optimizado para lectura en Telegram."
     )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Pregunta: {question}"}
     ]
-    return _call_groq_completion(messages, temperature=0.5, max_tokens=650)
+    return _call_groq_completion(messages, temperature=0.5, max_tokens=1500)
 
 # Compatibilidad con llamadas previas
 def answer_question_from_context(question, context=None):
