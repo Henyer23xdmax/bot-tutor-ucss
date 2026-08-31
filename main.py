@@ -38,8 +38,14 @@ async def post_init(application) -> None:
     await application.bot.set_my_commands(commands)
 
 if __name__ == '__main__':
-    if not TELEGRAM_TOKEN or not GROQ_API_KEY:
-        print("❌ ERROR: Faltan las variables TELEGRAM_TOKEN o GROQ_API_KEY en el archivo .env")
+    missing_vars = []
+    if not TELEGRAM_TOKEN:
+        missing_vars.append("TELEGRAM_TOKEN")
+    if not GROQ_API_KEY:
+        missing_vars.append("GROQ_API_KEY")
+        
+    if missing_vars:
+        print(f"❌ ERROR: Falta(n) la(s) variable(s) de entorno: {', '.join(missing_vars)}")
         exit(1)
         
     # Iniciar servidor de Health Check en segundo plano para Render

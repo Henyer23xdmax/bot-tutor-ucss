@@ -8,8 +8,15 @@ from config import GROQ_API_KEY
 # Inicializar cliente Groq
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-PRIMARY_MODEL = "llama-3.3-70b-versatile"
-FALLBACK_MODEL = "llama-3.1-8b-instant"
+# Modelos compatibles en orden de preferencia
+CANDIDATE_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "groq/compound",
+    "qwen/qwen3.6-27b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+]
 
 def extract_text_from_pdf(pdf_path, max_pages=50):
     reader = PdfReader(pdf_path)
@@ -22,13 +29,16 @@ def extract_text_from_pdf(pdf_path, max_pages=50):
 
 def _call_groq_completion(messages, temperature=0.3):
     global client
-    if not client:
+    from config import GROQ_API_KEY
+    if not client and GROQ_API_KEY:
         client = Groq(api_key=GROQ_API_KEY)
         
-    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
+    if not client:
+        raise ValueError("GROQ_API_KEY no está disponible o no se ha configurado.")
+        
     last_error = None
     
-    for model in models_to_try:
+    for model in CANDIDATE_MODELS:
         try:
             completion = client.chat.completions.create(
                 model=model,
