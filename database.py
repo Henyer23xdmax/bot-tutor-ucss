@@ -1,12 +1,12 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
-    telegram_id = Column(Integer, primary_key=True)
+    telegram_id = Column(BigInteger, primary_key=True)
     first_name = Column(String)
     correct_answers = Column(Integer, default=0)
     wrong_answers = Column(Integer, default=0)

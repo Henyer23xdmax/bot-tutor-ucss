@@ -8,16 +8,23 @@ from telegram.ext import ContextTypes
 from database import SessionLocal, User, ActivePoll
 from services import extract_text_from_pdf, generate_quiz_from_text, answer_question_from_pdf, ask_general_ai
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    first_name = update.effective_user.first_name
-    
-    db = SessionLocal()
-    user = db.query(User).filter_by(telegram_id=user_id).first()
+def get_or_create_user(db, telegram_id: int, first_name: str = "Estudiante") -> User:
+    user = db.query(User).filter_by(telegram_id=telegram_id).first()
     if not user:
-        user = User(telegram_id=user_id, first_name=first_name)
+        user = User(telegram_id=telegram_id, first_name=first_name or "Estudiante")
         db.add(user)
         db.commit()
+        db.refresh(user)
+    return user
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    first_name = update.effective_user.first_name or "Estudiante"
+    
+    db = SessionLocal()
+    user = get_or_create_user(db, user_id, first_name)
+    user.first_name = first_name
+    db.commit()
     db.close()
     
     await update.message.reply_text(
@@ -38,18 +45,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
-    user = db.query(User).filter_by(telegram_id=update.effective_user.id).first()
-    if user:
-        total = user.correct_answers + user.wrong_answers
-        await update.message.reply_text(
-            f"📊 *Tus Estadísticas Académicas*\n\n"
-            f"✅ Respuestas correctas: {user.correct_answers}\n"
-            f"❌ Respuestas incorrectas: {user.wrong_answers}\n"
-            f"📈 Total respondidas: {total}",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text("Aún no tienes estadísticas registradas. ¡Inicia con /start!")
+    user = get_or_create_user(db, update.effective_user.id, update.effective_user.first_name)
+    total = user.correct_answers + user.wrong_answers
+    await update.message.reply_text(
+        f"📊 *Tus Estadísticas Académicas*\n\n"
+        f"✅ Respuestas correctas: {user.correct_answers}\n"
+        f"❌ Respuestas incorrectas: {user.wrong_answers}\n"
+        f"📈 Total respondidas: {total}",
+        parse_mode="Markdown"
+    )
     db.close()
 
 # NUEVA FUNCIÓN: Monitoreo de servidor
@@ -102,27 +106,27 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status_msg = await update.message.reply_text("⏳ Procesando documento...")
     file = await context.bot.get_file(doc.file_id)
-    pdf_path = f"temp_{doc.file_name}"
+    safe_filename = "".join(c for c in doc.file_name if c.isalnum() or c in "._-")
+    pdf_path = f"temp_{update.effective_user.id}_{safe_filename}"
     await file.download_to_drive(pdf_path)
 
     try:
         text = extract_text_from_pdf(pdf_path)
         if len(text.strip()) < 50:
-            await status_msg.edit_text("❌ No se pudo extraer texto. Puede ser un PDF escaneado.")
+            await status_msg.edit_text("❌ No se pudo extraer suficiente texto del PDF. Puede ser un PDF escaneado o un formulario con imágenes.")
             return
             
         # Guardar el texto extraído como el último contexto de estudio del usuario
         db = SessionLocal()
-        user = db.query(User).filter_by(telegram_id=update.effective_user.id).first()
-        if user:
-            user.last_context = text
+        user = get_or_create_user(db, update.effective_user.id, update.effective_user.first_name)
+        user.last_context = text
         db.commit()
         db.close()
         
         keyboard = [
             [
                 InlineKeyboardButton("🎯 Generar Cuestionario", callback_data="btn_quiz"),
-                InlineKeyboardButton("💬 Resolver una Duda", callback_data="btn_duda"),
+                InlineKeyboardButton("💬 Resolver una Duda del PDF", callback_data="btn_duda"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -148,7 +152,7 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     db = SessionLocal()
     poll_record = db.query(ActivePoll).filter_by(poll_id=poll_id).first()
-    user_record = db.query(User).filter_by(telegram_id=user_id).first()
+    user_record = get_or_create_user(db, user_id, answer.user.first_name)
 
     if poll_record and user_record:
         if selected_option == poll_record.correct_option_id:
@@ -243,8 +247,8 @@ async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     db = SessionLocal()
-    user = db.query(User).filter_by(telegram_id=user_id).first()
-    contexto = user.last_context if user else None
+    user = get_or_create_user(db, user_id, update.effective_user.first_name)
+    contexto = user.last_context
     db.close()
     
     # Validación 2: Verificar que el usuario tenga un PDF activo en su sesión
@@ -315,8 +319,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     
     db = SessionLocal()
-    user = db.query(User).filter_by(telegram_id=user_id).first()
-    contexto = user.last_context if user else None
+    user = get_or_create_user(db, user_id, query.from_user.first_name)
+    contexto = user.last_context
     
     # Validación 1: Verificar que el usuario tenga un PDF activo en base de datos
     if not contexto or len(contexto.strip()) < 50:
