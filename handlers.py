@@ -185,7 +185,11 @@ async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         respuesta = answer_question_from_context(pregunta, contexto)
-        await status_msg.edit_text(respuesta, parse_mode="Markdown")
+        try:
+            await status_msg.edit_text(respuesta, parse_mode="Markdown")
+        except Exception as parse_err:
+            logging.warning(f"Error parseando Markdown, enviando como texto plano: {parse_err}")
+            await status_msg.edit_text(respuesta)
     except Exception as e:
         logging.error(f"Error en el comando /duda: {e}")
         await status_msg.edit_text("⚠️ Ocurrió un error al procesar tu duda. Por favor, intenta de nuevo.")
