@@ -27,7 +27,7 @@ def extract_text_from_pdf(pdf_path, max_pages=50):
             extracted_text += text + "\n"
     return extracted_text
 
-def _call_groq_completion(messages, temperature=0.3):
+def _call_groq_completion(messages, temperature=0.3, max_tokens=None):
     global client
     from config import GROQ_API_KEY
     if not client and GROQ_API_KEY:
@@ -40,11 +40,15 @@ def _call_groq_completion(messages, temperature=0.3):
     
     for model in CANDIDATE_MODELS:
         try:
-            completion = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-            )
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens:
+                kwargs["max_tokens"] = max_tokens
+                
+            completion = client.chat.completions.create(**kwargs)
             return completion.choices[0].message.content
         except Exception as e:
             logging.warning(f"Fallo al consultar modelo {model} en Groq: {e}. Intentando alternativa...")
@@ -75,7 +79,7 @@ def generate_quiz_from_text(text):
         {"role": "user", "content": user_prompt}
     ]
     
-    response_text = _call_groq_completion(messages, temperature=0.2)
+    response_text = _call_groq_completion(messages, temperature=0.2, max_tokens=1000)
     
     # Limpiar posibles bloques de código markdown ```json ... ```
     cleaned = re.sub(r"^```json\s*", "", response_text.strip(), flags=re.IGNORECASE)
@@ -99,29 +103,29 @@ def answer_question_from_pdf(question: str, context: str):
         "1. Responde basándote ÚNICA Y EXCLUSIVAMENTE en la información explícita del documento anterior.\n"
         "2. Si la respuesta no se encuentra en el documento, indícalo de forma clara y directa:\n"
         "   '⚠️ Esta información no se encuentra en el PDF que subiste. Si deseas consultar sobre temas generales fuera del documento, usa el comando /ia.'\n"
-        "3. Sé conciso, directo, didáctico y usa formato markdown limpio (máximo 3000 caracteres)."
+        "3. LÍMITE DE LONGITUD: Máximo 1800 a 2000 caracteres (unas 250 a 320 palabras). Sé conciso, directo, didáctico y usa formato markdown limpio."
     )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Pregunta sobre el PDF: {question}"}
     ]
-    return _call_groq_completion(messages, temperature=0.2)
+    return _call_groq_completion(messages, temperature=0.2, max_tokens=650)
 
 def ask_general_ai(question: str):
     """Responde cualquier duda general o académica sin requerir un PDF previo."""
     system_prompt = (
         "Actúa como un asistente académico y tutor inteligente experto, didáctico y servicial. "
         "Responde a la duda o tema académico del estudiante de forma clara, estructurada y pedagógica.\n"
-        "INSTRUCCIONES CLAVE:\n"
-        "1. Sé didáctico, claro y estructurado (utiliza listas, negritas o código si aplica).\n"
-        "2. Mantén un tono motivador y amigable.\n"
-        "3. Sé conciso y optimizado para Telegram (máximo 3000 caracteres)."
+        "INSTRUCCIONES Y LÍMITES OBLIGATORIOS:\n"
+        "1. LÍMITE DE LONGITUD: Tu respuesta debe tener entre 1500 y 2000 caracteres como máximo (unas 250 a 320 palabras).\n"
+        "2. ESTRUCTURA: Ve directo al grano. Inicia con una explicación clara y concisa, seguida de puntos clave con viñetas y un ejemplo práctico si aplica.\n"
+        "3. FORMATO: Usa formato Markdown limpio para Telegram (negritas, listas ordenadas y código si es necesario)."
     )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Pregunta: {question}"}
     ]
-    return _call_groq_completion(messages, temperature=0.5)
+    return _call_groq_completion(messages, temperature=0.5, max_tokens=650)
 
 # Compatibilidad con llamadas previas
 def answer_question_from_context(question, context=None):
