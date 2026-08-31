@@ -1,0 +1,23 @@
+# Entorno virtual (si lo tuvieras)
+venv/
+.venv/
+env/
+
+# Archivos de configuración sensibles con tus tokens
+.env
+
+# Bases de datos locales
+*.db
+*.db-journal
+
+# Archivos temporales y de reporte generados durante pruebas
+temp_*
+reporte_notas.csv
+Reporte_Estudiantes.csv
+
+# Caché de Python
+__pycache__/
+*.pyc
+
+# Archivos comprimidos de respaldo
+*.zip
