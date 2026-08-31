@@ -154,13 +154,53 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     poll_record = db.query(ActivePoll).filter_by(poll_id=poll_id).first()
     user_record = get_or_create_user(db, user_id, answer.user.first_name)
 
+    is_correct = False
     if poll_record and user_record:
         if selected_option == poll_record.correct_option_id:
             user_record.correct_answers += 1
+            is_correct = True
         else:
             user_record.wrong_answers += 1
         db.commit()
     db.close()
+
+    # Rastrear progreso del cuestionario para enviar los botones al terminar las 5 preguntas
+    quiz_data = context.user_data.get("active_quiz")
+    if quiz_data and poll_id in quiz_data.get("poll_ids", set()):
+        if poll_id not in quiz_data["answered_polls"]:
+            quiz_data["answered_polls"].add(poll_id)
+            if is_correct:
+                quiz_data["score_correct"] += 1
+            else:
+                quiz_data["score_wrong"] += 1
+
+        # Cuando el usuario responde las 5 preguntas del cuestionario
+        if len(quiz_data["answered_polls"]) >= quiz_data["total_polls"]:
+            correctas = quiz_data["score_correct"]
+            total = quiz_data["total_polls"]
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("🔄 Generar 5 Preguntas Nuevas", callback_data="btn_quiz"),
+                    InlineKeyboardButton("💬 Resolver una Duda del PDF", callback_data="btn_duda"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await context.bot.send_message(
+                chat_id=quiz_data["chat_id"],
+                text=(
+                    f"🎉 *¡Has completado el cuestionario!*\n\n"
+                    f"📊 *Tu puntaje en esta ronda:*\n"
+                    f"✅ Aciertos: *{correctas}/{total}*\n"
+                    f"❌ Errores: *{total - correctas}/{total}*\n\n"
+                    f"🔄 ¿Qué deseas hacer a continuación con este documento?"
+                ),
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            # Resetear quiz activo
+            context.user_data["active_quiz"] = None
 
 import re
 
@@ -343,6 +383,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not quizzes or not isinstance(quizzes, list):
                 raise ValueError("La respuesta de la IA no contiene una lista de cuestionarios válida.")
                 
+            poll_ids = set()
             # Enviar las encuestas correspondientes
             for q in quizzes:
                 message = await context.bot.send_poll(
@@ -354,25 +395,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     explanation=q.get("explanation", "")[:200],
                     is_anonymous=False 
                 )
+                poll_ids.add(message.poll.id)
                 poll_record = ActivePoll(poll_id=message.poll.id, correct_option_id=int(q["correct_option_id"]))
                 db.add(poll_record)
             db.commit()
             
-            # Confirmar éxito y ofrecer menú interactivo para generar más preguntas o consultar dudas
-            keyboard = [
-                [
-                    InlineKeyboardButton("🔄 Generar 5 Preguntas Nuevas", callback_data="btn_quiz"),
-                    InlineKeyboardButton("💬 Resolver una Duda del PDF", callback_data="btn_duda"),
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.message.reply_text(
-                "🎯 *¡Cuestionario de 5 preguntas generado con éxito!*\n"
-                "Responde las encuestas arriba para evaluar tu conocimiento.\n\n"
-                "¿Qué deseas hacer a continuación con este documento?",
-                reply_markup=reply_markup,
-                parse_mode="Markdown"
-            )
+            # Guardar sesión de cuestionario activo para avisar al completar las 5 preguntas
+            context.user_data["active_quiz"] = {
+                "chat_id": query.message.chat_id,
+                "total_polls": len(quizzes),
+                "poll_ids": poll_ids,
+                "answered_polls": set(),
+                "score_correct": 0,
+                "score_wrong": 0
+            }
         except Exception as e:
             logging.error(f"Error generando quiz desde callback: {e}")
             # Si falla, restaurar botones para permitir volver a intentarlo
