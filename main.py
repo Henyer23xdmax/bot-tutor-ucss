@@ -3,9 +3,9 @@ import logging
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import BotCommand
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, PollAnswerHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, PollAnswerHandler, CallbackQueryHandler, filters
 from config import TELEGRAM_TOKEN, GEMINI_API_KEY
-from handlers import start, stats, sysinfo, exportar, ping, duda, handle_document, handle_poll_answer
+from handlers import start, stats, sysinfo, exportar, ping, duda, handle_document, handle_poll_answer, handle_callback
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -57,9 +57,10 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("duda", duda))
     
-    # Procesamiento de archivos y encuestas
+    # Procesamiento de archivos, encuestas y callbacks
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(PollAnswerHandler(handle_poll_answer))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     
     print("🤖 Servidor Modular iniciado. Esperando mensajes...")
     app.run_polling()

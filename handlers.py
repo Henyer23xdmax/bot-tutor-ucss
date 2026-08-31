@@ -3,7 +3,7 @@ import csv
 import psutil
 import logging
 import time
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import SessionLocal, User, ActivePoll
 from services import extract_text_from_pdf, generate_quiz_from_text, answer_question_from_context
@@ -109,32 +109,27 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status_msg.edit_text("❌ No se pudo extraer texto. Puede ser un PDF escaneado.")
             return
             
-        await status_msg.edit_text("🧠 Analizando con Inteligencia Artificial...")
-        quizzes = generate_quiz_from_text(text)
-        
-        await status_msg.edit_text("🎯 ¡Quiz generado! Responde para sumar puntos:")
-        
-        db = SessionLocal()
-        
         # Guardar el texto extraído como el último contexto de estudio del usuario
+        db = SessionLocal()
         user = db.query(User).filter_by(telegram_id=update.effective_user.id).first()
         if user:
             user.last_context = text
-            
-        for q in quizzes:
-            message = await context.bot.send_poll(
-                chat_id=update.effective_chat.id,
-                question=q["question"][:255],
-                options=[opt[:100] for opt in q["options"][:4]],
-                type="quiz",
-                correct_option_id=int(q["correct_option_id"]),
-                explanation=q.get("explanation", "")[:200],
-                is_anonymous=False 
-            )
-            poll_record = ActivePoll(poll_id=message.poll.id, correct_option_id=int(q["correct_option_id"]))
-            db.add(poll_record)
         db.commit()
         db.close()
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🎯 Generar Cuestionario", callback_data="btn_quiz"),
+                InlineKeyboardButton("💬 Resolver una Duda", callback_data="btn_duda"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await status_msg.edit_text(
+            "📄 *¡PDF procesado con éxito!*\n\n"
+            "He guardado el contenido en tu sesión de estudio. ¿Qué te gustaría hacer ahora?",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
 
     except Exception as e:
         logging.error(f"Error procesando PDF: {e}")
@@ -193,3 +188,83 @@ async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logging.error(f"Error en el comando /duda: {e}")
         await status_msg.edit_text("⚠️ Ocurrió un error al procesar tu duda. Por favor, intenta de nuevo.")
+
+# NUEVA FUNCIÓN: Manejar clics de los botones interactivos
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    data = query.data
+    
+    db = SessionLocal()
+    user = db.query(User).filter_by(telegram_id=user_id).first()
+    contexto = user.last_context if user else None
+    
+    # Validación 1: Verificar que el usuario tenga un PDF activo en base de datos
+    if not contexto or len(contexto.strip()) < 50:
+        await query.edit_message_text(
+            "⚠️ *Sesión de estudio vencida o vacía*\n\n"
+            "No tienes ningún archivo PDF activo. Por favor, envía un documento PDF válido primero.",
+            parse_mode="Markdown"
+        )
+        db.close()
+        return
+
+    if data == "btn_quiz":
+        # Deshabilitar botones editando el mensaje para evitar doble clic o re-generación
+        await query.edit_message_text("🧠 *Generando cuestionario con Inteligencia Artificial...*\nPor favor, espera unos segundos.", parse_mode="Markdown")
+        
+        try:
+            quizzes = generate_quiz_from_text(contexto)
+            
+            # Validación 2: Verificar que se hayan recibido preguntas válidas
+            if not quizzes or not isinstance(quizzes, list):
+                raise ValueError("La respuesta de la IA no contiene una lista de cuestionarios válida.")
+                
+            # Enviar las encuestas correspondientes
+            for q in quizzes:
+                message = await context.bot.send_poll(
+                    chat_id=query.message.chat_id,
+                    question=q["question"][:255],
+                    options=[opt[:100] for opt in q["options"][:4]],
+                    type="quiz",
+                    correct_option_id=int(q["correct_option_id"]),
+                    explanation=q.get("explanation", "")[:200],
+                    is_anonymous=False 
+                )
+                poll_record = ActivePoll(poll_id=message.poll.id, correct_option_id=int(q["correct_option_id"]))
+                db.add(poll_record)
+            db.commit()
+            
+            # Confirmar éxito
+            await query.message.reply_text("🎯 ¡Quiz generado con éxito! Responde las preguntas arriba para acumular puntos.")
+        except Exception as e:
+            logging.error(f"Error generando quiz desde callback: {e}")
+            # Si falla, restaurar botones para permitir volver a intentarlo
+            keyboard = [
+                [
+                    InlineKeyboardButton("🎯 Intentar Generar de nuevo", callback_data="btn_quiz"),
+                    InlineKeyboardButton("💬 Resolver una Duda", callback_data="btn_duda"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "❌ *Error al generar el cuestionario*\n\n"
+                "Hubo un problema al contactar con la IA o formatear las preguntas. ¿Deseas reintentar?",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
+            
+    elif data == "btn_duda":
+        # Mostrar instrucciones para /duda y quitar botones
+        await query.edit_message_text(
+            "💬 *Resolver dudas con el Tutor*\n\n"
+            "Escribe tu pregunta utilizando el comando `/duda` seguido de tu pregunta.\n\n"
+            "Ejemplo:\n"
+            "`/duda resume los puntos clave de este documento`\n"
+            "`/duda ¿qué significa el término fotosíntesis en el PDF?`",
+            parse_mode="Markdown"
+        )
+        
+    db.close()
