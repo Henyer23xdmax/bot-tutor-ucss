@@ -358,8 +358,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 db.add(poll_record)
             db.commit()
             
-            # Confirmar éxito
-            await query.message.reply_text("🎯 ¡Quiz generado con éxito! Responde las preguntas arriba para acumular puntos.")
+            # Confirmar éxito y ofrecer menú interactivo para generar más preguntas o consultar dudas
+            keyboard = [
+                [
+                    InlineKeyboardButton("🔄 Generar 5 Preguntas Nuevas", callback_data="btn_quiz"),
+                    InlineKeyboardButton("💬 Resolver una Duda del PDF", callback_data="btn_duda"),
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.reply_text(
+                "🎯 *¡Cuestionario de 5 preguntas generado con éxito!*\n"
+                "Responde las encuestas arriba para evaluar tu conocimiento.\n\n"
+                "¿Qué deseas hacer a continuación con este documento?",
+                reply_markup=reply_markup,
+                parse_mode="Markdown"
+            )
         except Exception as e:
             logging.error(f"Error generando quiz desde callback: {e}")
             # Si falla, restaurar botones para permitir volver a intentarlo

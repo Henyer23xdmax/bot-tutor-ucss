@@ -73,8 +73,9 @@ def _call_groq_completion(messages, temperature=0.3, max_tokens=None):
 
 def generate_quiz_from_text(text):
     system_prompt = (
-        "Actúa como un profesor universitario. Con base en el texto provisto, "
-        "genera un cuestionario de exactamente 3 preguntas de opción múltiple. "
+        "Actúa como un profesor universitario riguroso y pedagógico. Con base en el texto provisto, "
+        "genera un cuestionario de EXACTAMENTE 5 preguntas de opción múltiple variadas y educativas. "
+        "Cada pregunta debe tener exactamente 4 opciones y una única respuesta correcta.\n"
         "Responde ÚNICAMENTE con un arreglo JSON válido (sin explicaciones adicionales, sin markdown extra) "
         "con esta estructura exacta:\n"
         "[\n"
@@ -82,7 +83,7 @@ def generate_quiz_from_text(text):
         '    "question": "Texto de la pregunta (máximo 250 caracteres)",\n'
         '    "options": ["Opción 1", "Opción 2", "Opción 3", "Opción 4"],\n'
         '    "correct_option_id": 0,\n'
-        '    "explanation": "Explicación breve (máximo 200 caracteres)"\n'
+        '    "explanation": "Explicación breve de la respuesta correcta (máximo 200 caracteres)"\n'
         "  }\n"
         "]"
     )
@@ -94,7 +95,7 @@ def generate_quiz_from_text(text):
         {"role": "user", "content": user_prompt}
     ]
     
-    response_text = _call_groq_completion(messages, temperature=0.2, max_tokens=1000)
+    response_text = _call_groq_completion(messages, temperature=0.5, max_tokens=1500)
     
     # Limpiar posibles bloques de código markdown ```json ... ```
     cleaned = re.sub(r"^```json\s*", "", response_text.strip(), flags=re.IGNORECASE)
