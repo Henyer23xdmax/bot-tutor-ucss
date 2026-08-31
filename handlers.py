@@ -6,7 +6,7 @@ import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import SessionLocal, User, ActivePoll
-from services import extract_text_from_pdf, generate_quiz_from_text, answer_question_from_context
+from services import extract_text_from_pdf, generate_quiz_from_text, answer_question_from_pdf, ask_general_ai
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -24,13 +24,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 ¡Hola {first_name}! He guardado tu perfil en la base de datos.\n\n"
         "✨ *Comandos disponibles:*\n"
         "📖 /start - Mostrar este mensaje de bienvenida\n"
+        "📄 /duda [pregunta] - Resolver dudas exclusivas sobre tu PDF subido\n"
+        "🤖 /ia [pregunta] - Consultar a la IA sobre cualquier tema o duda general\n"
         "📊 /stats - Ver tus estadísticas académicas\n"
         "🖥️ /sysinfo - Ver estado del servidor (CPU/RAM)\n"
         "📁 /exportar - Exportar base de datos a CSV\n"
-        "⚡ /ping - Medir la latencia del bot con el servidor\n"
-        "💬 /duda [pregunta] - Resuelve tus dudas académicas sobre el PDF enviado o en general\n\n"
+        "⚡ /ping - Medir la latencia del bot con el servidor\n\n"
         "📚 *¿Cómo empezar?*\n"
-        "Envíame un archivo **PDF** (máximo 5MB) de estudio y yo generaré un cuestionario de 3 preguntas de opción múltiple para evaluar tu conocimiento.",
+        "1. Envíame un archivo **PDF** (máximo 5MB) para generar cuestionarios o hacerle preguntas con `/duda`.\n"
+        "2. O escribe `/ia [pregunta]` para consultar cualquier duda académica libre.",
         parse_mode="Markdown"
     )
 
@@ -156,55 +158,133 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         db.commit()
     db.close()
 
-# NUEVA FUNCIÓN: Responder dudas académicas
+def split_message(text: str, max_length: int = 4000) -> list[str]:
+    """Divide un texto largo en bloques de tamaño máximo respetando saltos de línea."""
+    if not text or len(text) <= max_length:
+        return [text] if text else [""]
+    
+    chunks = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append(remaining)
+            break
+        split_idx = remaining.rfind('\n', 0, max_length)
+        if split_idx == -1 or split_idx < 100:
+            split_idx = remaining.rfind(' ', 0, max_length)
+        if split_idx == -1 or split_idx < 100:
+            split_idx = max_length
+        
+        chunks.append(remaining[:split_idx].strip())
+        remaining = remaining[split_idx:].strip()
+    return chunks
+
+# FUNCIÓN: Responder dudas exclusivas sobre el PDF
 async def duda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Verificar si el usuario ingresó una pregunta
+    # Validación 1: Verificar si el usuario ingresó una pregunta
     if not context.args:
         await update.message.reply_text(
             "⚠️ *Uso incorrecto del comando*\n\n"
-            "Por favor escribe tu duda académica después de `/duda`.\n"
-            "Ejemplo: `/duda ¿qué es la fotosíntesis?`", 
+            "Por favor escribe tu duda sobre el PDF después de `/duda`.\n"
+            "Ejemplo: `/duda ¿cuáles son los conceptos principales?`\n\n"
+            "💡 *Tip:* Si quieres hacer una pregunta general sobre cualquier otro tema, usa `/ia [pregunta]`.", 
             parse_mode="Markdown"
         )
         return
         
-    pregunta = " ".join(context.args)
-    status_msg = await update.message.reply_text("🤔 Analizando tu duda y consultando al tutor...")
-    
     db = SessionLocal()
     user = db.query(User).filter_by(telegram_id=user_id).first()
     contexto = user.last_context if user else None
     db.close()
     
+    # Validación 2: Verificar que el usuario tenga un PDF activo en su sesión
+    if not contexto or len(contexto.strip()) < 50:
+        await update.message.reply_text(
+            "⚠️ *No tienes un archivo PDF cargado*\n\n"
+            "El comando `/duda` responde preguntas **únicamente sobre el PDF** que hayas subido.\n\n"
+            "👉 Por favor envía un archivo **PDF** primero.\n"
+            "👉 O si quieres hacer una pregunta general sin PDF, usa: `/ia [tu pregunta]`",
+            parse_mode="Markdown"
+        )
+        return
+        
+    pregunta = " ".join(context.args)
+    status_msg = await update.message.reply_text("📖 Buscando en el contenido del PDF y consultando al tutor...")
+    
     try:
-        respuesta = answer_question_from_context(pregunta, contexto)
+        respuesta = answer_question_from_pdf(pregunta, contexto)
+        chunks = split_message(respuesta, max_length=4000)
+        
+        first_chunk = chunks[0] if chunks else "No se obtuvo respuesta."
         try:
-            await status_msg.edit_text(respuesta, parse_mode="Markdown")
+            await status_msg.edit_text(first_chunk, parse_mode="Markdown")
         except Exception as parse_err:
             logging.warning(f"Error parseando Markdown, enviando como texto plano: {parse_err}")
-            await status_msg.edit_text(respuesta)
+            await status_msg.edit_text(first_chunk)
             
-        # Si había un documento activo, ofrecer nuevamente el menú de opciones
-        if contexto:
-            keyboard = [
-                [
-                    InlineKeyboardButton("🎯 Generar Cuestionario", callback_data="btn_quiz"),
-                    InlineKeyboardButton("💬 Resolver otra Duda", callback_data="btn_duda"),
-                ]
+        for chunk in chunks[1:]:
+            try:
+                await update.message.reply_text(chunk, parse_mode="Markdown")
+            except Exception:
+                await update.message.reply_text(chunk)
+            
+        # Ofrecer nuevamente el menú de opciones del documento
+        keyboard = [
+            [
+                InlineKeyboardButton("🎯 Generar Cuestionario", callback_data="btn_quiz"),
+                InlineKeyboardButton("💬 Resolver otra Duda del PDF", callback_data="btn_duda"),
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="🔄 ¿Qué deseas hacer a continuación con este documento?",
-                reply_markup=reply_markup
-            )
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="🔄 ¿Qué deseas hacer a continuación con este documento?",
+            reply_markup=reply_markup
+        )
     except Exception as e:
         logging.error(f"Error en el comando /duda: {e}")
-        await status_msg.edit_text("⚠️ Ocurrió un error al procesar tu duda. Por favor, intenta de nuevo.")
+        await status_msg.edit_text("⚠️ Ocurrió un error al procesar tu duda sobre el PDF. Por favor, intenta de nuevo.")
 
-# NUEVA FUNCIÓN: Manejar clics de los botones interactivos
+# NUEVA FUNCIÓN: Responder consultas generales a la IA sin requerir PDF
+async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Validación: Verificar si el usuario ingresó una pregunta
+    if not context.args:
+        await update.message.reply_text(
+            "🤖 *Asistente IA General*\n\n"
+            "Puedes preguntarme sobre cualquier tema, materia o concepto académico.\n"
+            "Ejemplo: `/ia ¿qué es la fotosíntesis?`\n"
+            "Ejemplo: `/ia resuelve esta ecuación paso a paso: 2x + 5 = 15`\n\n"
+            "💡 *Tip:* Si deseas hacer preguntas sobre un PDF que subiste, usa `/duda [pregunta]`.",
+            parse_mode="Markdown"
+        )
+        return
+        
+    pregunta = " ".join(context.args)
+    status_msg = await update.message.reply_text("🤖 Consultando a la Inteligencia Artificial...")
+    
+    try:
+        respuesta = ask_general_ai(pregunta)
+        chunks = split_message(respuesta, max_length=4000)
+        
+        first_chunk = chunks[0] if chunks else "No se obtuvo respuesta."
+        try:
+            await status_msg.edit_text(first_chunk, parse_mode="Markdown")
+        except Exception as parse_err:
+            logging.warning(f"Error parseando Markdown, enviando como texto plano: {parse_err}")
+            await status_msg.edit_text(first_chunk)
+            
+        for chunk in chunks[1:]:
+            try:
+                await update.message.reply_text(chunk, parse_mode="Markdown")
+            except Exception:
+                await update.message.reply_text(chunk)
+    except Exception as e:
+        logging.error(f"Error en el comando /ia: {e}")
+        await status_msg.edit_text("⚠️ Ocurrió un error al consultar a la IA. Por favor, intenta de nuevo.")
+
+# FUNCIÓN: Manejar clics de los botones interactivos
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -260,7 +340,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = [
                 [
                     InlineKeyboardButton("🎯 Intentar Generar de nuevo", callback_data="btn_quiz"),
-                    InlineKeyboardButton("💬 Resolver una Duda", callback_data="btn_duda"),
+                    InlineKeyboardButton("💬 Resolver una Duda del PDF", callback_data="btn_duda"),
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -274,11 +354,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "btn_duda":
         # Mostrar instrucciones para /duda y quitar botones
         await query.edit_message_text(
-            "💬 *Resolver dudas con el Tutor*\n\n"
+            "💬 *Resolver dudas sobre este PDF*\n\n"
             "Escribe tu pregunta utilizando el comando `/duda` seguido de tu pregunta.\n\n"
             "Ejemplo:\n"
-            "`/duda resume los puntos clave de este documento`\n"
-            "`/duda ¿qué significa el término fotosíntesis en el PDF?`",
+            "`/duda resume las conclusiones principales del documento`\n"
+            "`/duda ¿qué conceptos clave se mencionan en la página 1?`\n\n"
+            "💡 *Nota:* Para preguntas generales no relacionadas al PDF, usa `/ia [pregunta]`.",
             parse_mode="Markdown"
         )
         

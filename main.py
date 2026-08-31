@@ -5,7 +5,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, PollAnswerHandler, CallbackQueryHandler, filters
 from config import TELEGRAM_TOKEN, GROQ_API_KEY
-from handlers import start, stats, sysinfo, exportar, ping, duda, handle_document, handle_poll_answer, handle_callback
+from handlers import start, stats, sysinfo, exportar, ping, duda, ia, handle_document, handle_poll_answer, handle_callback
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -29,11 +29,12 @@ def run_health_check_server():
 async def post_init(application) -> None:
     commands = [
         BotCommand("start", "Iniciar el tutor y registrarse"),
+        BotCommand("duda", "Resolver dudas sobre el PDF subido"),
+        BotCommand("ia", "Consultar a la IA sobre cualquier tema general"),
         BotCommand("stats", "Ver mis estadísticas de aciertos"),
         BotCommand("sysinfo", "Ver estado del servidor (CPU/RAM)"),
         BotCommand("exportar", "Exportar lista de estudiantes a CSV"),
         BotCommand("ping", "Medir la latencia del bot con el servidor"),
-        BotCommand("duda", "Resolver dudas académicas con el tutor"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -57,11 +58,12 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     
-    # Nuevas rutas de administración
+    # Nuevas rutas de administración y consultas IA
     app.add_handler(CommandHandler("sysinfo", sysinfo))
     app.add_handler(CommandHandler("exportar", exportar))
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("duda", duda))
+    app.add_handler(CommandHandler("ia", ia))
     
     # Procesamiento de archivos, encuestas y callbacks
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))

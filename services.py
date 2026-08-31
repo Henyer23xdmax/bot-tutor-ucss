@@ -89,27 +89,42 @@ def generate_quiz_from_text(text):
         
     return json.loads(cleaned)
 
-def answer_question_from_context(question, context=None):
-    if context:
-        system_prompt = (
-            "Actúa como un tutor académico paciente y experto. "
-            "El estudiante está estudiando un documento con el siguiente texto de contexto:\n"
-            f"---\n{context[:80000]}\n---\n"
-            "Responde a la pregunta del estudiante basándote en el contexto anterior. "
-            "Si la pregunta no se relaciona con el contexto, responde de forma general aclarando brevemente "
-            "que no estaba en el texto original, pero proporciona una respuesta completa y educativa.\n"
-            "INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro. Usa formato markdown limpio."
-        )
-    else:
-        system_prompt = (
-            "Actúa como un tutor académico paciente y experto. "
-            "Responde a la pregunta del estudiante de forma educativa, estructurada y muy clara.\n"
-            "INSTRUCCIONES CLAVE: Sé muy conciso, directo y claro. Usa formato markdown limpio."
-        )
-        
+def answer_question_from_pdf(question: str, context: str):
+    """Responde preguntas estrictamente basadas en el documento PDF proporcionado."""
+    system_prompt = (
+        "Actúa como un tutor académico experto. El estudiante te hace una pregunta EXCLUSIVAMENTE sobre "
+        "el documento PDF que ha subido. El contenido del documento es el siguiente:\n"
+        f"---\n{context[:80000]}\n---\n"
+        "REGLAS ESTRICTAS:\n"
+        "1. Responde basándote ÚNICA Y EXCLUSIVAMENTE en la información explícita del documento anterior.\n"
+        "2. Si la respuesta no se encuentra en el documento, indícalo de forma clara y directa:\n"
+        "   '⚠️ Esta información no se encuentra en el PDF que subiste. Si deseas consultar sobre temas generales fuera del documento, usa el comando /ia.'\n"
+        "3. Sé conciso, directo, didáctico y usa formato markdown limpio (máximo 3000 caracteres)."
+    )
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Pregunta del estudiante: {question}"}
+        {"role": "user", "content": f"Pregunta sobre el PDF: {question}"}
     ]
-    
-    return _call_groq_completion(messages, temperature=0.4)
+    return _call_groq_completion(messages, temperature=0.2)
+
+def ask_general_ai(question: str):
+    """Responde cualquier duda general o académica sin requerir un PDF previo."""
+    system_prompt = (
+        "Actúa como un asistente académico y tutor inteligente experto, didáctico y servicial. "
+        "Responde a la duda o tema académico del estudiante de forma clara, estructurada y pedagógica.\n"
+        "INSTRUCCIONES CLAVE:\n"
+        "1. Sé didáctico, claro y estructurado (utiliza listas, negritas o código si aplica).\n"
+        "2. Mantén un tono motivador y amigable.\n"
+        "3. Sé conciso y optimizado para Telegram (máximo 3000 caracteres)."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Pregunta: {question}"}
+    ]
+    return _call_groq_completion(messages, temperature=0.5)
+
+# Compatibilidad con llamadas previas
+def answer_question_from_context(question, context=None):
+    if context:
+        return answer_question_from_pdf(question, context)
+    return ask_general_ai(question)
