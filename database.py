@@ -50,12 +50,12 @@ def _build_engine():
             )
         else:
             # PostgreSQL / Supabase: usar SSL y configurar timeout para serverless.
-            # Si la URL trae params de query se conservan.
+            # connect_timeout corto para que el failover a SQLite sea rápido si Supabase no responde.
             engine = create_engine(
                 db_url,
                 pool_pre_ping=True,
                 pool_recycle=1800,
-                connect_args={"sslmode": "require"},
+                connect_args={"sslmode": "require", "connect_timeout": 7},
             )
         Base.metadata.create_all(engine)
         _engine = engine
