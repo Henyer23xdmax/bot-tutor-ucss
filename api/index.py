@@ -32,20 +32,26 @@ app = FastAPI(
     description="Bot de tutor académico para Telegram desplegado en Vercel"
 )
 
-# Inicializar la aplicación de Telegram (una sola vez por cold start)
-ptb_app = Application.builder().token(TELEGRAM_TOKEN).build()
+_ptb_initialized = False
 
-# Registrar handlers
-ptb_app.add_handler(CommandHandler("start", start))
-ptb_app.add_handler(CommandHandler("stats", stats))
-ptb_app.add_handler(CommandHandler("sysinfo", sysinfo))
-ptb_app.add_handler(CommandHandler("exportar", exportar))
-ptb_app.add_handler(CommandHandler("ping", ping))
-ptb_app.add_handler(CommandHandler("duda", duda))
-ptb_app.add_handler(CommandHandler("ia", ia))
-ptb_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-ptb_app.add_handler(PollAnswerHandler(handle_poll_answer))
-ptb_app.add_handler(CallbackQueryHandler(handle_callback))
+
+def _get_ptb_app():
+    """Crea (una sola vez) y devuelve la aplicación de Telegram."""
+    global _ptb_initialized
+    if "ptb_app" not in globals():
+        app = Application.builder().token(TELEGRAM_TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("stats", stats))
+        app.add_handler(CommandHandler("sysinfo", sysinfo))
+        app.add_handler(CommandHandler("exportar", exportar))
+        app.add_handler(CommandHandler("ping", ping))
+        app.add_handler(CommandHandler("duda", duda))
+        app.add_handler(CommandHandler("ia", ia))
+        app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+        app.add_handler(PollAnswerHandler(handle_poll_answer))
+        app.add_handler(CallbackQueryHandler(handle_callback))
+        globals()["ptb_app"] = app
+    return globals()["ptb_app"]
 
 
 @app.get("/")
@@ -54,16 +60,26 @@ async def home():
     return {"message": "Bot Tutor UCSS activo en Vercel", "status": "running", "bot": "ok"}
 
 
+async def _process_webhook(data) -> None:
+    """Inicializa (si hace falta) y procesa un update de Telegram."""
+    import asyncio
+    application = _get_ptb_app()
+    if not _ptb_initialized:
+        await application.initialize()
+        globals()["_ptb_initialized"] = True
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+
+
 @app.post("/api/index")
 async def telegram_webhook(request: Request):
     """Webhook de Telegram"""
     try:
         data = await request.json()
-        update = Update.de_json(data, ptb_app.bot)
-        await ptb_app.process_update(update)
+        await _process_webhook(data)
         return JSONResponse(content={"status": "ok"})
     except Exception as e:
-        logger.error(f"Error procesando webhook: {e}")
+        logger.error(f"Error procesando webhook: {e}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": str(e)}
