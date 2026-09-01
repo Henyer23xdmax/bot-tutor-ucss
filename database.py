@@ -49,11 +49,13 @@ def _build_engine():
                 connect_args={"check_same_thread": False, "timeout": 30},
             )
         else:
-            # PostgreSQL / Supabase
+            # PostgreSQL / Supabase: usar SSL y configurar timeout para serverless.
+            # Si la URL trae params de query se conservan.
             engine = create_engine(
                 db_url,
                 pool_pre_ping=True,
                 pool_recycle=1800,
+                connect_args={"sslmode": "require"},
             )
         Base.metadata.create_all(engine)
         _engine = engine
@@ -72,10 +74,21 @@ def _get_session_local():
 
 
 def SessionLocal():
-    """Devuelve una sesión de SQLAlchemy. Inicializa la DB de forma perezosa si hace falta."""
+    """Devuelve una sesión de SQLAlchemy. Inicializa la DB de forma perezosa si hace falta.
+    Si la base de datos principal (ej. Supabase) falla, cae a SQLite en /tmp para no romper el bot."""
     global _engine, _SessionLocal
     if _engine is None:
-        _build_engine()
+        try:
+            _build_engine()
+        except Exception as e:
+            logger.error(f"Failover a SQLite porque fallo la DB principal: {e}")
+            import tempfile
+            db_path = os.path.join(tempfile.gettempdir(), "bot_database.db")
+            _engine = create_engine(
+                f"sqlite:///{db_path}",
+                connect_args={"check_same_thread": False, "timeout": 30},
+            )
+            Base.metadata.create_all(_engine)
     if _SessionLocal is None:
         _SessionLocal = sessionmaker(bind=_engine)
     return _SessionLocal()
