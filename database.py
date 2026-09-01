@@ -23,7 +23,29 @@ db_url = os.getenv("DATABASE_URL", "sqlite:///bot_database.db")
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(db_url)
+# Si se usa SQLite local (sin DATABASE_URL de nube), en entornos serverless como
+# Vercel el escritorio es efímero, así que guardamos el archivo en /tmp por velocidad
+# y ponemos un timeout amplio para evitar errores de "database is locked" con
+# invocaciones concurrentes. NOTA: en Vercel /tmp NO persiste entre ejecuciones.
+if db_url.startswith("sqlite"):
+    import tempfile
+    if ":///" not in db_url or db_url == "sqlite:///bot_database.db":
+        db_path = os.path.join(tempfile.gettempdir(), "bot_database.db")
+        db_url = f"sqlite:///{db_path}"
+
+    engine = create_engine(
+        db_url,
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+else:
+    # Compatibilidad con PostgreSQL (Supabase) en entornos serverless:
+    # 'creator' permite usar un pool por invocación y evita conexiones colgadas
+    engine = create_engine(
+        db_url,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
+
 Base.metadata.create_all(engine)
 SessionLocal = sessionmaker(bind=engine)
 
