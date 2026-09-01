@@ -55,7 +55,7 @@ def _build_engine():
                 db_url,
                 pool_pre_ping=True,
                 pool_recycle=1800,
-                connect_args={"sslmode": "require", "connect_timeout": 7},
+                connect_args={"sslmode": "require", "connect_timeout": 3},
             )
         Base.metadata.create_all(engine)
         _engine = engine

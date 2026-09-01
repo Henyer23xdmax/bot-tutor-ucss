@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from io import BytesIO
 from pypdf import PdfReader
 from groq import Groq
 from config import GROQ_API_KEY
@@ -17,6 +18,16 @@ CANDIDATE_MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
 ]
+
+def extract_text_from_pdf_bytes(data: bytes, max_pages=50):
+    """Extrae texto de un PDF a partir de sus bytes (sin tocar disco, ideal para serverless)."""
+    reader = PdfReader(BytesIO(data))
+    extracted_text = ""
+    for page in reader.pages[:max_pages]:
+        text = page.extract_text()
+        if text:
+            extracted_text += text + "\n"
+    return extracted_text
 
 def extract_text_from_pdf(pdf_path, max_pages=50):
     reader = PdfReader(pdf_path)

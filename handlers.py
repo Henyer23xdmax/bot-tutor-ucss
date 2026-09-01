@@ -1,12 +1,13 @@
 import os
 import csv
+import tempfile
 import psutil
 import logging
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import SessionLocal, User, ActivePoll
-from services import extract_text_from_pdf, generate_quiz_from_text, answer_question_from_pdf, ask_general_ai
+from services import extract_text_from_pdf_bytes, extract_text_from_pdf, generate_quiz_from_text, answer_question_from_pdf, ask_general_ai
 
 def get_or_create_user(db, telegram_id: int, first_name: str = "Estudiante") -> User:
     user = db.query(User).filter_by(telegram_id=telegram_id).first()
@@ -80,7 +81,7 @@ async def exportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = SessionLocal()
     users = db.query(User).all()
     
-    csv_filename = "reporte_notas.csv"
+    csv_filename = os.path.join(tempfile.gettempdir(), "reporte_notas.csv")
     with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(["ID Telegram", "Nombre", "Correctas", "Incorrectas"])
@@ -105,13 +106,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     status_msg = await update.message.reply_text("⏳ Procesando documento...")
-    file = await context.bot.get_file(doc.file_id)
-    safe_filename = "".join(c for c in doc.file_name if c.isalnum() or c in "._-")
-    pdf_path = f"temp_{update.effective_user.id}_{safe_filename}"
-    await file.download_to_drive(pdf_path)
 
     try:
-        text = extract_text_from_pdf(pdf_path)
+        # Descargar el archivo a memoria (sin tocar disco, que en Vercel es de solo lectura)
+        file = await context.bot.get_file(doc.file_id)
+        file_bytes = await file.download_as_bytearray()
+        text = extract_text_from_pdf_bytes(bytes(file_bytes))
         if len(text.strip()) < 50:
             await status_msg.edit_text("❌ No se pudo extraer suficiente texto del PDF. Puede ser un PDF escaneado o un formulario con imágenes.")
             return
@@ -139,10 +139,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logging.error(f"Error procesando PDF: {e}")
-        await status_msg.edit_text("⚠️ Ocurrió un error en el procesamiento. Revisa los logs de la terminal.")
-    finally:
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
+        try:
+            await status_msg.edit_text("⚠️ Ocurrió un error en el procesamiento. Revisa los logs de la terminal.")
+        except Exception:
+            pass
 
 async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = update.poll_answer
