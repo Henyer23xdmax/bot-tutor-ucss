@@ -9,8 +9,10 @@ from telegram.ext import (
     PollAnswerHandler, CallbackQueryHandler, filters
 )
 
-# Agregar el directorio raíz al path para importar módulos del bot
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Agregar el directorio raíz al path para importar módulos del bot (Vercel usa /var/task)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from config import TELEGRAM_TOKEN
 from handlers import (
@@ -18,14 +20,17 @@ from handlers import (
     handle_document, handle_poll_answer, handle_callback
 )
 
-# Configurar logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(
+    title="Bot Tutor UCSS",
+    version="1.0.0",
+    description="Bot de tutor académico para Telegram desplegado en Vercel"
+)
 
 # Inicializar la aplicación de Telegram (una sola vez por cold start)
 ptb_app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -43,16 +48,19 @@ ptb_app.add_handler(PollAnswerHandler(handle_poll_answer))
 ptb_app.add_handler(CallbackQueryHandler(handle_callback))
 
 
+@app.get("/")
+async def home():
+    """Health check"""
+    return {"message": "Bot Tutor UCSS activo en Vercel", "status": "running", "bot": "ok"}
+
+
 @app.post("/api/index")
 async def telegram_webhook(request: Request):
-    """Endpoint principal para recibir webhooks de Telegram"""
+    """Webhook de Telegram"""
     try:
         data = await request.json()
         update = Update.de_json(data, ptb_app.bot)
-        
-        # Procesar la actualización
         await ptb_app.process_update(update)
-        
         return JSONResponse(content={"status": "ok"})
     except Exception as e:
         logger.error(f"Error procesando webhook: {e}")
@@ -60,12 +68,6 @@ async def telegram_webhook(request: Request):
             status_code=500,
             content={"status": "error", "message": str(e)}
         )
-
-
-@app.get("/")
-async def home():
-    """Endpoint de verificación de salud"""
-    return {"message": "Bot Tutor UCSS activo en Vercel", "status": "running"}
 
 
 @app.get("/api/index")
